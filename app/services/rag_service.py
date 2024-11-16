@@ -4,25 +4,35 @@ from langchain_openai import ChatOpenAI
 from langchain_community.chat_models import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory, SQLChatMessageHistory
 from langchain.schema import HumanMessage
 from langchain_community.retrievers import BM25Retriever
 from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 
 from utils.template import order_prompt, contextualize_prompt
-# from utils.redis_utils import *
+from langchain_core.runnables.utils import ConfigurableFieldSpec
+
+config_fields = [
+    ConfigurableFieldSpec(
+        id="user_id",
+        annotation=str,
+        name="User ID",
+        description="Unique identifier for a user.",
+        default="",
+        is_shared=True,
+    )
+]
 
 from dotenv import load_dotenv
 load_dotenv()
 
 class RagPipeline:
     def __init__(self):
-        # self.llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.1)
-        self.llm = ChatOllama(model="llama3.1", temperature=0.1)
+        self.llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.1)
+        # self.llm = ChatOllama(model="llama3.1", temperature=0.1)
         self.retriever = self.init_retriever()
         self.chain = self.init_chain()
-        self.session_histories = {}
         self.current_session_id = 'a000000'
         
     def init_retriever(self):            
@@ -49,25 +59,27 @@ class RagPipeline:
         else:
             self.current_session_id = session_id
         
-        def get_session_history(session_id):
-            if session_id == None:
-                session_id = self.current_session_id
-            print(f"[대화 세션ID]: {session_id}")
-            if session_id not in self.session_histories:  # 세션 ID가 store에 없는 경우
-                # 새로운 ChatMessageHistory 객체를 생성하여 store에 저장
-                self.session_histories[session_id] = ChatMessageHistory()
-            return self.session_histories[session_id]  # 해당 세션 ID에 대한 세션 기록 반환
+        print(f"[대화 세션ID]: {self.current_session_id }")
+        
+        # 세션 ID를 기반으로 세션 기록을 가져오는 함수
+        def get_chat_history(session_id):
+            return SQLChatMessageHistory(
+                table_name='customer',
+                session_id=session_id,
+                connection="sqlite:///sqlite.db",
+            )
+        
 
         conversational_rag_chain = RunnableWithMessageHistory(      
             self.chain,                                 # 실행할 Runnable 객체
-            get_session_history,                        # 세션 기록을 가져오는 함수
+            get_chat_history,                        # 세션 기록을 가져오는 함수
             input_messages_key="input",                 # 입력 메시지의 키
             history_messages_key="chat_history",        # 기록 메시지의 키
-            output_messages_key="answer"                # 출력 메시지의 키 
+            history_factory_config=config_fields,  # 대화 기록 조회시 참고할 파라미터를 설정합니다.
         )
         response = conversational_rag_chain.invoke(
             {"input": question},
-            config={"configurable": {"session_id": self.current_session_id}}            # 같은 session_id 를 입력하면 이전 대화 스레드의 내용을 가져오기 때문에 이어서 대화가 가능!
+            config={"configurable": {"user_id": self.current_session_id}}            # 같은 session_id 를 입력하면 이전 대화 스레드의 내용을 가져오기 때문에 이어서 대화가 가능!
         )
-
+        
         return response

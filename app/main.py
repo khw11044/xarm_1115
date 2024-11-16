@@ -21,8 +21,8 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.getcwd(), "static")),
 
 # 라우터 등록
 app.include_router(audio.router)
-app.include_router(chatbot.router)
 app.include_router(stream.router)  # 스트림 라우터 추가
+app.include_router(chatbot.router, prefix="/chatbot", tags=["Chatbot"])
 
 # index.html 서빙
 @app.get("/", response_class=HTMLResponse)
