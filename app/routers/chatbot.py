@@ -90,6 +90,8 @@ async def save_message(request: SaveMessageRequest):
     try:
         chat_message_history = get_chat_history(request.session_id)
         chat_message_history.add_ai_message(request.message)
+        messages = chat_message_history.messages
+        print(messages)
         return {"message": "User message saved successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save message: {str(e)}")

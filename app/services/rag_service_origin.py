@@ -29,9 +29,8 @@ load_dotenv()
 
 class RagPipeline:
     def __init__(self):
-        # self.llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.1)
+        self.llm = ChatOpenAI(model_name="gpt-4o-mini", temperature=0.1)
         # self.llm = ChatOllama(model="aris-q4", temperature=0.1)
-        self.llm = ChatOllama(model="llama3.1", temperature=0.1)
         self.retriever = self.init_retriever()
         self.chain = self.init_chain()
         self.current_session_id = 'a000000'
@@ -43,8 +42,12 @@ class RagPipeline:
         return bm25_retriever
 
     def init_chain(self):
-        
-        rag_chat_chain = order_prompt | self.llm | StrOutputParser()
+        # 1. 이어지는 대화가 되도록 대화기록과 체인
+        history_aware_retriever = create_history_aware_retriever(self.llm, self.retriever, contextualize_prompt)      # self.mq_ensemble_retriever
+        # 2. 문서들의 내용을 답변할 수 있도록 리트리버와 체인
+        question_answer_chain = create_stuff_documents_chain(self.llm, order_prompt)
+        # 3. 1과 2를 합침
+        rag_chat_chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
         
         return rag_chat_chain
 
@@ -74,17 +77,14 @@ class RagPipeline:
             history_messages_key="chat_history",        # 기록 메시지의 키
             history_factory_config=config_fields,  # 대화 기록 조회시 참고할 파라미터를 설정합니다.
         )
-          
+        
         try:
-            answer = conversational_rag_chain.invoke(
+            response = conversational_rag_chain.invoke(
                 {"input": question},
                 config={"configurable": {"user_id": self.current_session_id}}            # 같은 session_id 를 입력하면 이전 대화 스레드의 내용을 가져오기 때문에 이어서 대화가 가능!
             )
         
         except Exception as e:
             print(f"Error during RAG chain invocation: {e}")
-
-        response = {"answer":answer}
-        
         
         return response
